@@ -20,11 +20,16 @@
  *   WHATSAPP_PHONE=15551234567   # your number, country code, digits only
  *   WHATSAPP_APIKEY=your_key     # sent to you by CallMeBot after opt-in
  *
+ * Optional, for the same alerts via a Discord webhook instead (or as well):
+ *   DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+ *   (create one in any server: Settings -> Integrations -> Webhooks -> New Webhook)
+ *
  * Deploying to Render.com's free tier (see Dockerfile):
  * - Render sets PORT and RENDER automatically; this script reacts to both
  *   (keep-alive HTTP server, low-memory Chromium flags) with no config needed.
- * - Set HEADLESS=true, DISCORD_EMAIL/PASSWORD, and the WHATSAPP_* vars as
- *   Render "Environment Variables" in the dashboard — never commit .env.
+ * - Set HEADLESS=true, DISCORD_EMAIL/PASSWORD, and whichever alert vars
+ *   (WHATSAPP_*, DISCORD_WEBHOOK_URL) you're using as Render "Environment
+ *   Variables" in the dashboard — never commit .env.
  * - Upload discord_auth_state.json as a Render "Secret File" (dashboard ->
  *   Environment -> Secret Files) mounted at /app/discord_auth_state.json —
  *   never commit it either, it's a live session token. Generate it locally
@@ -101,6 +106,32 @@ async function sendWhatsAppAlert(message) {
   }
 }
 
+const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
+
+// Sends a message via a Discord webhook — an official, sanctioned Discord
+// feature (unlike the account automation this script otherwise does), so
+// it's the more reliable alert channel. Create one under a server's
+// Settings -> Integrations -> Webhooks -> New Webhook, copy its URL.
+// No-op if DISCORD_WEBHOOK_URL isn't set, so this is entirely optional.
+async function sendDiscordAlert(message) {
+  if (!DISCORD_WEBHOOK_URL) return;
+  try {
+    await fetch(DISCORD_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: message }),
+    });
+  } catch (err) {
+    console.error('Failed to send Discord webhook alert:', err.message);
+  }
+}
+
+// Fires every configured alert channel. Each one no-ops on its own if not
+// configured, so this works fine with zero, one, or both set up.
+async function sendAlert(message) {
+  await Promise.all([sendWhatsAppAlert(message), sendDiscordAlert(message)]);
+}
+
 async function main() {
   if (!EMAIL || !PASSWORD) {
     console.error(
@@ -161,7 +192,7 @@ async function main() {
     console.error(
       `Timed out after ${REDIRECT_OR_FORM_TIMEOUT}ms waiting for either a redirect or the login form. Current URL: ${page.url()}`
     );
-    await sendWhatsAppAlert(
+    await sendAlert(
       'Discord watcher: timed out waiting for login state (no redirect, no login form). The watcher has stopped.'
     );
     await browser.close();
@@ -196,7 +227,7 @@ async function main() {
       console.log('Verification complete, login successful.');
     } catch (err) {
       console.error('Timed out waiting for login to complete.');
-      await sendWhatsAppAlert(
+      await sendAlert(
         'Discord watcher: login needs manual 2FA/CAPTCHA that nobody completed in time. Re-run locally (headed) to refresh discord_auth_state.json, then redeploy it. The watcher has stopped.'
       );
       await browser.close();
@@ -319,10 +350,10 @@ async function doPostLoginActions(page) {
 
         if (PRIORITY_GAMES.includes(game)) {
           // Emphasized + sent twice so it's harder to miss among other alerts.
-          await sendWhatsAppAlert(`❗❗ PRIORITY: "${game}" has ${tokens} token(s) available now! ❗❗`);
-          await sendWhatsAppAlert(`❗❗ PRIORITY: "${game}" has ${tokens} token(s) available now! ❗❗`);
+          await sendAlert(`❗❗ PRIORITY: "${game}" has ${tokens} token(s) available now! ❗❗`);
+          await sendAlert(`❗❗ PRIORITY: "${game}" has ${tokens} token(s) available now! ❗❗`);
         } else {
-          await sendWhatsAppAlert(`"${game}" has ${tokens} token(s) available now.`);
+          await sendAlert(`"${game}" has ${tokens} token(s) available now.`);
         }
       } else if (tokens <= TOKEN_THRESHOLD && state.wasAvailable) {
         // Dropped back to/below threshold, so the next time it exceeds
