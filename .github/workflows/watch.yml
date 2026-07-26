@@ -28,7 +28,15 @@ jobs:
       - run: npx playwright install --with-deps chromium
 
       - name: Write saved session from secret
-        run: echo "$DISCORD_AUTH_STATE" > discord_auth_state.json
+        # DISCORD_AUTH_STATE holds the session file gzip+base64'd, since the
+        # raw JSON (~75KB) exceeds GitHub's 48KB secret size limit.
+        run: |
+          node -e "
+            const fs = require('fs');
+            const zlib = require('zlib');
+            const compressed = Buffer.from(process.env.DISCORD_AUTH_STATE, 'base64');
+            fs.writeFileSync('discord_auth_state.json', zlib.gunzipSync(compressed));
+          "
         env:
           DISCORD_AUTH_STATE: ${{ secrets.DISCORD_AUTH_STATE }}
 
