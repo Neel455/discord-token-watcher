@@ -24,7 +24,20 @@
  *   DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
  *   (create one in any server: Settings -> Integrations -> Webhooks -> New Webhook)
  *
- * Deploying to Render.com's free tier (see Dockerfile):
+ * Deploying to GitHub Actions (see .github/workflows/watch.yml) — no card,
+ * ever, but checks run on a schedule (every 5-10 min) instead of continuously:
+ * - Runs as a single check-and-exit pass (GITHUB_ACTIONS env var, set
+ *   automatically by Actions, switches this file into that mode). Cross-run
+ *   "was this already available" state lives in game_state.json, which the
+ *   workflow commits back to the repo after each run — don't delete it.
+ * - Add repo Settings -> Secrets and variables -> Actions -> New repository
+ *   secret for: DISCORD_EMAIL, DISCORD_PASSWORD, DISCORD_AUTH_STATE (the full
+ *   contents of your local discord_auth_state.json — generate it locally
+ *   first, headed run, solve 2FA once), and whichever alert vars you're using
+ *   (WHATSAPP_PHONE, WHATSAPP_APIKEY, DISCORD_WEBHOOK_URL).
+ *
+ * Deploying to Render.com's free tier (see Dockerfile) — an alternative if
+ * you ever get continuous hosting working without a card:
  * - Render sets PORT and RENDER automatically; this script reacts to both
  *   (keep-alive HTTP server, low-memory Chromium flags) with no config needed.
  * - Set HEADLESS=true, DISCORD_EMAIL/PASSWORD, and whichever alert vars
@@ -74,10 +87,19 @@ if (process.env.PORT) {
     });
 }
 
-// Render sets this env var automatically in its containers. Used to trim
-// Chromium's memory footprint on the free tier's 512MB instances — these
-// flags are unnecessary (and left off) for a normal desktop run.
+// Render sets RENDER, GitHub Actions sets GITHUB_ACTIONS, both automatically
+// in their runners. Used to trim Chromium's memory footprint / apply
+// container-friendly launch flags — unnecessary (and left off) for a normal
+// desktop run.
 const IS_RENDER = !!process.env.RENDER;
+const IS_GITHUB_ACTIONS = process.env.GITHUB_ACTIONS === 'true';
+const IS_CONTAINER_ENV = IS_RENDER || IS_GITHUB_ACTIONS;
+
+// GitHub Actions runners are ephemeral — nothing in memory survives between
+// scheduled runs. This file is how "was this game already available last
+// time we checked" persists across runs; the workflow commits it back to the
+// repo after each run. Only used in GitHub Actions mode (see doPostLoginActions).
+const GAME_STATE_PATH = path.join(__dirname, 'game_state.json');
 
 const EMAIL = process.env.DISCORD_EMAIL;
 const PASSWORD = process.env.DISCORD_PASSWORD;
@@ -87,7 +109,7 @@ const STORAGE_STATE_PATH = path.join(__dirname, 'discord_auth_state.json');
 // you need to see the window to handle 2FA/CAPTCHA. On a headless server set
 // HEADLESS=true in .env — that only works if discord_auth_state.json already
 // holds a valid logged-in session, since there's no one there to solve 2FA.
-const HEADLESS = process.env.HEADLESS === 'true';
+const HEADLESS = process.env.HEADLESS === 'true' || IS_GITHUB_ACTIONS;
 
 const WHATSAPP_PHONE = process.env.WHATSAPP_PHONE;
 const WHATSAPP_APIKEY = process.env.WHATSAPP_APIKEY;
@@ -145,7 +167,7 @@ async function main() {
 
   const browser = await chromium.launch({
     headless: HEADLESS, // headed by default so you can handle 2FA/CAPTCHA if prompted
-    args: IS_RENDER
+    args: IS_CONTAINER_ENV
       ? ['--disable-dev-shm-usage', '--no-sandbox', '--disable-gpu']
       : [],
   });
@@ -281,9 +303,8 @@ async function doPostLoginActions(page) {
   console.log('Dropdown opened, waiting for options to load...');
   await page.waitForTimeout(2000); // let the option list render
 
-  // --- 4. Watch multiple games indefinitely, logging each time a game's
-  //        token count goes from 0 -> available (an "event"), instead of
-  //        clicking anything for now.
+  // --- 4. Check games' token availability, logging + alerting each time a
+  //        game's token count goes from 0 -> available (an "event").
   //
   // Add/remove game names here. Matching is done with hasText, so partial
   // names work (e.g. "AC Black Flag" matches "AC Black Flag Resynced").
@@ -302,12 +323,91 @@ async function doPostLoginActions(page) {
   const PRIORITY_GAMES = ['AC Black Flag'];
 
   const TOKEN_THRESHOLD = 0; // only count/log when tokens exceed this
-  const POLL_INTERVAL_MS = 2000; // how often to check, in ms. See note below on tuning this.
-  const HEARTBEAT_EVERY_N_POLLS = 15; // ~every 30s at a 2s poll interval — adjust as needed
   const LOG_FILE_PATH = path.join(__dirname, 'token_availability_log.txt');
 
-  // Tracks, per game: how many times it's flipped from unavailable -> available,
-  // and whether it was available on the last check (to detect the transition).
+  // Checks one game's current token count against its state, logging +
+  // alerting on an unavailable -> available transition. Shared by both the
+  // continuous loop (local/Render) and GitHub Actions' single-pass mode.
+  async function checkGame(game, state) {
+    const optionLocator = page.getByRole('option').filter({ hasText: game });
+
+    const optionText = await optionLocator.innerText().catch(() => null);
+    if (optionText === null) {
+      // Option not found/visible right now — record it as unknown and skip.
+      state.lastTokens = 'not found';
+      return;
+    }
+
+    const match = optionText.match(/(\d+)\s*tokens?\s*available/i);
+    const tokens = match ? parseInt(match[1], 10) : 0;
+    state.lastTokens = tokens;
+
+    if (tokens > TOKEN_THRESHOLD && !state.wasAvailable) {
+      // Transition: below threshold -> above threshold. Count it and log it.
+      state.count += 1;
+      state.wasAvailable = true;
+
+      const timestamp = new Date().toISOString();
+      const logLine = `[${timestamp}] "${game}" exceeded ${TOKEN_THRESHOLD} tokens (tokens: ${tokens}). Total times seen: ${state.count}\n`;
+
+      console.log(logLine.trim());
+      fs.appendFileSync(LOG_FILE_PATH, logLine);
+
+      if (PRIORITY_GAMES.includes(game)) {
+        // Emphasized + sent twice so it's harder to miss among other alerts.
+        await sendAlert(`❗❗ PRIORITY: "${game}" has ${tokens} token(s) available now! ❗❗`);
+        await sendAlert(`❗❗ PRIORITY: "${game}" has ${tokens} token(s) available now! ❗❗`);
+      } else {
+        await sendAlert(`"${game}" has ${tokens} token(s) available now.`);
+      }
+    } else if (tokens <= TOKEN_THRESHOLD && state.wasAvailable) {
+      // Dropped back to/below threshold, so the next time it exceeds
+      // TOKEN_THRESHOLD counts as a new event rather than the same one.
+      state.wasAvailable = false;
+    }
+  }
+
+  if (IS_GITHUB_ACTIONS) {
+    // GitHub Actions runners are ephemeral — there's no long-lived process to
+    // poll in a loop. Instead, the workflow's cron schedule provides the
+    // cadence: one check per run. Cross-run transition detection relies on
+    // game_state.json (count/wasAvailable only — lastTokens fluctuates too
+    // often to be worth persisting/committing), which the workflow commits
+    // back to the repo after each run.
+    const savedState = fs.existsSync(GAME_STATE_PATH)
+      ? JSON.parse(fs.readFileSync(GAME_STATE_PATH, 'utf8'))
+      : {};
+
+    const gameState = {};
+    for (const game of GAMES_TO_WATCH) {
+      const saved = savedState[game] || {};
+      gameState[game] = {
+        count: saved.count || 0,
+        wasAvailable: saved.wasAvailable || false,
+        lastTokens: null,
+      };
+    }
+
+    console.log(`Checking ${GAMES_TO_WATCH.length} game(s) once (GitHub Actions mode).`);
+    for (const game of GAMES_TO_WATCH) {
+      await checkGame(game, gameState[game]);
+    }
+
+    const snapshot = GAMES_TO_WATCH.map((game) => `${game}: ${gameState[game].lastTokens}`).join(' | ');
+    console.log(`Check complete — ${snapshot}`);
+
+    const stateToSave = {};
+    for (const game of GAMES_TO_WATCH) {
+      stateToSave[game] = { count: gameState[game].count, wasAvailable: gameState[game].wasAvailable };
+    }
+    fs.writeFileSync(GAME_STATE_PATH, JSON.stringify(stateToSave, null, 2));
+    return;
+  }
+
+  // Continuous mode (local run or Render): poll indefinitely in-process.
+  const POLL_INTERVAL_MS = 2000; // how often to check, in ms.
+  const HEARTBEAT_EVERY_N_POLLS = 15; // ~every 30s at a 2s poll interval — adjust as needed
+
   const gameState = {};
   for (const game of GAMES_TO_WATCH) {
     gameState[game] = { count: 0, wasAvailable: false, lastTokens: null };
@@ -323,43 +423,7 @@ async function doPostLoginActions(page) {
     pollCount += 1;
 
     for (const game of GAMES_TO_WATCH) {
-      const optionLocator = page.getByRole('option').filter({ hasText: game });
-
-      const optionText = await optionLocator.innerText().catch(() => null);
-      if (optionText === null) {
-        // Option not found/visible right now — record it as unknown and skip.
-        gameState[game].lastTokens = 'not found';
-        continue;
-      }
-
-      const match = optionText.match(/(\d+)\s*tokens?\s*available/i);
-      const tokens = match ? parseInt(match[1], 10) : 0;
-      const state = gameState[game];
-      state.lastTokens = tokens;
-
-      if (tokens > TOKEN_THRESHOLD && !state.wasAvailable) {
-        // Transition: below threshold -> above threshold. Count it and log it.
-        state.count += 1;
-        state.wasAvailable = true;
-
-        const timestamp = new Date().toISOString();
-        const logLine = `[${timestamp}] "${game}" exceeded ${TOKEN_THRESHOLD} tokens (tokens: ${tokens}). Total times seen: ${state.count}\n`;
-
-        console.log(logLine.trim());
-        fs.appendFileSync(LOG_FILE_PATH, logLine);
-
-        if (PRIORITY_GAMES.includes(game)) {
-          // Emphasized + sent twice so it's harder to miss among other alerts.
-          await sendAlert(`❗❗ PRIORITY: "${game}" has ${tokens} token(s) available now! ❗❗`);
-          await sendAlert(`❗❗ PRIORITY: "${game}" has ${tokens} token(s) available now! ❗❗`);
-        } else {
-          await sendAlert(`"${game}" has ${tokens} token(s) available now.`);
-        }
-      } else if (tokens <= TOKEN_THRESHOLD && state.wasAvailable) {
-        // Dropped back to/below threshold, so the next time it exceeds
-        // TOKEN_THRESHOLD counts as a new event rather than the same one.
-        state.wasAvailable = false;
-      }
+      await checkGame(game, gameState[game]);
     }
 
     // Heartbeat: every N polls, print a full snapshot so you can visually
