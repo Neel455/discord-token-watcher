@@ -375,18 +375,19 @@ async function doPostLoginActions(page) {
 
   if (IS_GITHUB_ACTIONS) {
     // GitHub Actions runners are ephemeral — there's no long-lived process to
-    // poll in a loop. Instead, the workflow's cron schedule provides the
-    // cadence: one check per run. Cross-run transition detection relies on
-    // game_state.json (count/wasAvailable only — lastTokens fluctuates too
-    // often to be worth persisting/committing), which the workflow commits
-    // back to the repo after each run.
+    // poll in a loop. Instead, the external trigger's schedule provides the
+    // cadence: one check per run. Cross-run change detection relies on
+    // game_state.json (including lastTokens now, since that's exactly what
+    // we're diffing against), which the workflow commits back after each run.
     const savedState = fs.existsSync(GAME_STATE_PATH)
       ? JSON.parse(fs.readFileSync(GAME_STATE_PATH, 'utf8'))
       : {};
 
     const gameState = {};
+    const previousTokens = {};
     for (const game of GAMES_TO_WATCH) {
       const saved = savedState[game] || {};
+      previousTokens[game] = saved.lastTokens ?? null;
       gameState[game] = {
         count: saved.count || 0,
         wasAvailable: saved.wasAvailable || false,
@@ -402,19 +403,32 @@ async function doPostLoginActions(page) {
     const snapshot = GAMES_TO_WATCH.map((game) => `${game}: ${gameState[game].lastTokens}`).join(' | ');
     console.log(`Check complete — ${snapshot}`);
 
-    // Combined token-count summary — sent every single check, regardless of
-    // whether anything changed, so you always know current counts for every
-    // watched game. Priority games (see PRIORITY_GAMES) still get their own
-    // extra, emphasized alert above when they actually become available.
-    const summaryLines = GAMES_TO_WATCH.map((game) => {
-      const marker = PRIORITY_GAMES.includes(game) ? '❗ ' : '';
-      return `${marker}${game}: ${gameState[game].lastTokens}`;
-    });
-    await sendAlert(`Token check:\n${summaryLines.join('\n')}`);
+    // Combined token-count summary — only sent when at least one game's
+    // count actually differs from last check, so you're not getting an
+    // identical message every ~5 min for no reason. Priority games (see
+    // PRIORITY_GAMES) still get their own extra, emphasized alert above
+    // regardless, when they actually become available.
+    const hasChange = GAMES_TO_WATCH.some(
+      (game) => gameState[game].lastTokens !== previousTokens[game]
+    );
+
+    if (hasChange) {
+      const summaryLines = GAMES_TO_WATCH.map((game) => {
+        const marker = PRIORITY_GAMES.includes(game) ? '❗ ' : '';
+        return `${marker}${game}: ${gameState[game].lastTokens}`;
+      });
+      await sendAlert(`Token check:\n${summaryLines.join('\n')}`);
+    } else {
+      console.log('No change since last check — summary alert skipped.');
+    }
 
     const stateToSave = {};
     for (const game of GAMES_TO_WATCH) {
-      stateToSave[game] = { count: gameState[game].count, wasAvailable: gameState[game].wasAvailable };
+      stateToSave[game] = {
+        count: gameState[game].count,
+        wasAvailable: gameState[game].wasAvailable,
+        lastTokens: gameState[game].lastTokens,
+      };
     }
     fs.writeFileSync(GAME_STATE_PATH, JSON.stringify(stateToSave, null, 2));
     return;
