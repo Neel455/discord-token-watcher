@@ -1,14 +1,14 @@
 {
   "AC Black Flag": {
-    "count": 0,
+    "count": 1,
     "wasAvailable": false
   },
   "Anno 117 Pax Romana": {
     "count": 1,
-    "wasAvailable": true
+    "wasAvailable": false
   },
   "Far Cry 6": {
-    "count": 0,
+    "count": 1,
     "wasAvailable": false
   },
   "Monopoly Star Wars": {
@@ -20,7 +20,7 @@
     "wasAvailable": true
   },
   "Star Wars Outlaws": {
-    "count": 1,
+    "count": 2,
     "wasAvailable": true
   }
 }
