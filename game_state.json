@@ -9,7 +9,7 @@
   },
   "Far Cry 6": {
     "count": 1,
-    "wasAvailable": true
+    "wasAvailable": false
   },
   "Monopoly Star Wars": {
     "count": 1,
@@ -20,7 +20,7 @@
     "wasAvailable": true
   },
   "Star Wars Outlaws": {
-    "count": 1,
-    "wasAvailable": false
+    "count": 2,
+    "wasAvailable": true
   }
 }
