@@ -355,9 +355,15 @@ async function doPostLoginActions(page) {
 
       if (PRIORITY_GAMES.includes(game)) {
         // Emphasized + sent twice so it's harder to miss among other alerts.
+        // Fires regardless of mode — priority games always get this on top
+        // of whatever else is going on (e.g. GitHub Actions mode's combined
+        // per-check summary below).
         await sendAlert(`❗❗ PRIORITY: "${game}" has ${tokens} token(s) available now! ❗❗`);
         await sendAlert(`❗❗ PRIORITY: "${game}" has ${tokens} token(s) available now! ❗❗`);
-      } else {
+      } else if (!IS_GITHUB_ACTIONS) {
+        // In GitHub Actions mode, the combined per-check summary (below)
+        // already reports every game's count each run, so a one-off
+        // transition alert for non-priority games would be redundant there.
         await sendAlert(`"${game}" has ${tokens} token(s) available now.`);
       }
     } else if (tokens <= TOKEN_THRESHOLD && state.wasAvailable) {
@@ -395,6 +401,16 @@ async function doPostLoginActions(page) {
 
     const snapshot = GAMES_TO_WATCH.map((game) => `${game}: ${gameState[game].lastTokens}`).join(' | ');
     console.log(`Check complete — ${snapshot}`);
+
+    // Combined token-count summary — sent every single check, regardless of
+    // whether anything changed, so you always know current counts for every
+    // watched game. Priority games (see PRIORITY_GAMES) still get their own
+    // extra, emphasized alert above when they actually become available.
+    const summaryLines = GAMES_TO_WATCH.map((game) => {
+      const marker = PRIORITY_GAMES.includes(game) ? '❗ ' : '';
+      return `${marker}${game}: ${gameState[game].lastTokens}`;
+    });
+    await sendAlert(`Token check:\n${summaryLines.join('\n')}`);
 
     const stateToSave = {};
     for (const game of GAMES_TO_WATCH) {
