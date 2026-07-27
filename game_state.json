@@ -7,12 +7,12 @@
   "Anno 117 Pax Romana": {
     "count": 2,
     "wasAvailable": true,
-    "lastTokens": 3
+    "lastTokens": 2
   },
   "Far Cry 6": {
     "count": 3,
-    "wasAvailable": true,
-    "lastTokens": 1
+    "wasAvailable": false,
+    "lastTokens": 0
   },
   "Monopoly Star Wars": {
     "count": 1,
