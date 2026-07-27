@@ -25,8 +25,8 @@
     "lastTokens": 2
   },
   "Star Wars Outlaws": {
-    "count": 2,
-    "wasAvailable": false,
-    "lastTokens": 0
+    "count": 3,
+    "wasAvailable": true,
+    "lastTokens": 1
   }
 }
