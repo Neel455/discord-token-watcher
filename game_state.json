@@ -11,8 +11,8 @@
   },
   "Far Cry 6": {
     "count": 7,
-    "wasAvailable": true,
-    "lastTokens": 3
+    "wasAvailable": false,
+    "lastTokens": 0
   },
   "Monopoly Star Wars": {
     "count": 1,
@@ -27,6 +27,6 @@
   "Star Wars Outlaws": {
     "count": 5,
     "wasAvailable": true,
-    "lastTokens": 1
+    "lastTokens": 2
   }
 }
