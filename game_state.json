@@ -7,7 +7,7 @@
   "Anno 117 Pax Romana": {
     "count": 2,
     "wasAvailable": true,
-    "lastTokens": 2
+    "lastTokens": 3
   },
   "Far Cry 6": {
     "count": 7,
@@ -17,7 +17,7 @@
   "Monopoly Star Wars": {
     "count": 1,
     "wasAvailable": true,
-    "lastTokens": 5
+    "lastTokens": 4
   },
   "Prince of Persia: The Lost Crown": {
     "count": 1,
@@ -27,6 +27,6 @@
   "Star Wars Outlaws": {
     "count": 6,
     "wasAvailable": true,
-    "lastTokens": 2
+    "lastTokens": 3
   }
 }
