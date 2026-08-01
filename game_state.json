@@ -7,7 +7,7 @@
   "Anno 117 Pax Romana": {
     "count": 2,
     "wasAvailable": true,
-    "lastTokens": 3
+    "lastTokens": 4
   },
   "Far Cry 6": {
     "count": 7,
@@ -27,6 +27,6 @@
   "Star Wars Outlaws": {
     "count": 8,
     "wasAvailable": true,
-    "lastTokens": 2
+    "lastTokens": 1
   }
 }
