@@ -17,16 +17,16 @@
   "Monopoly Star Wars": {
     "count": 2,
     "wasAvailable": true,
-    "lastTokens": 1
+    "lastTokens": 2
   },
   "Prince of Persia: The Lost Crown": {
     "count": 1,
     "wasAvailable": true,
-    "lastTokens": 2
+    "lastTokens": 1
   },
   "Star Wars Outlaws": {
     "count": 7,
     "wasAvailable": true,
-    "lastTokens": 2
+    "lastTokens": 1
   }
 }
