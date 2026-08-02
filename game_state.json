@@ -2,31 +2,31 @@
   "AC Black Flag": {
     "count": 5,
     "wasAvailable": false,
-    "lastTokens": 0
+    "lastTokens": "not found"
   },
   "Anno 117 Pax Romana": {
     "count": 2,
     "wasAvailable": true,
-    "lastTokens": 7
+    "lastTokens": "not found"
   },
   "Far Cry 6": {
     "count": 7,
     "wasAvailable": false,
-    "lastTokens": 0
+    "lastTokens": "not found"
   },
   "Monopoly Star Wars": {
     "count": 2,
     "wasAvailable": true,
-    "lastTokens": 5
+    "lastTokens": "not found"
   },
   "Prince of Persia: The Lost Crown": {
     "count": 2,
     "wasAvailable": true,
-    "lastTokens": 3
+    "lastTokens": "not found"
   },
   "Star Wars Outlaws": {
     "count": 8,
     "wasAvailable": true,
-    "lastTokens": 3
+    "lastTokens": "not found"
   }
 }
