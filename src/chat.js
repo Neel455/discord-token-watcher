@@ -21,7 +21,23 @@ const FORMAT_NOTE =
   '\n\nUser messages are prefixed with the speaker\'s Discord name, like ' +
   '"SomeUser: message text" - that\'s just so you can tell who\'s talking in ' +
   'a shared channel. Reply as plain text with no name prefix of your own, and ' +
-  "don't roleplay or speak as other users.";
+  "don't roleplay or speak as other users. Keep every reply to 1-3 short " +
+  'sentences, like an actual Discord chat message - never write paragraphs, ' +
+  'even if the personality above is chatty or enthusiastic. Never use Discord ' +
+  'mention syntax like <@123456789> - you are not given real user IDs, so any ' +
+  "you write will be fake and show up broken. Refer to people by their plain " +
+  'name instead (e.g. "Shahneel" or "@Shahneel" as plain text).';
+
+// Strips any <@id> mention syntax the model writes anyway, despite the
+// instruction above - a fabricated ID could otherwise coincidentally match
+// and ping a real member.
+function stripFakeMentions(text) {
+  return text.replace(/<@!?(\d+)>/g, '@$1');
+}
+
+// Backstop in case the prompt instruction above gets ignored - hard-caps how
+// much the model can generate per reply, independent of the persona text.
+const MAX_REPLY_TOKENS = 150;
 
 function loadSystemPrompt() {
   try {
@@ -71,7 +87,7 @@ async function getChatReply(channelId, authorName, messageText) {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${GROQ_API_KEY}`,
       },
-      body: JSON.stringify({ model: GROQ_MODEL, messages }),
+      body: JSON.stringify({ model: GROQ_MODEL, messages, max_tokens: MAX_REPLY_TOKENS }),
     });
 
     if (!response.ok) {
@@ -80,9 +96,10 @@ async function getChatReply(channelId, authorName, messageText) {
     }
 
     const data = await response.json();
-    const reply = data.choices?.[0]?.message?.content?.trim();
-    if (!reply) return null;
+    const rawReply = data.choices?.[0]?.message?.content?.trim();
+    if (!rawReply) return null;
 
+    const reply = stripFakeMentions(rawReply);
     pushToHistory(channelId, userContent, reply);
     return reply;
   } catch (err) {

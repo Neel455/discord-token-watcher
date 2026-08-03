@@ -141,19 +141,19 @@ function registerMessageHandler(client) {
 
     const settings = getChatSettings(message.channelId);
 
-    if (mentionsBot && MUTE_PATTERN.test(message.content)) {
+    if (MUTE_PATTERN.test(message.content)) {
       settings.muted = true;
       await message.reply('Going quiet in here - say the word when you want me back.');
       return;
     }
 
-    if (mentionsBot && UNMUTE_PATTERN.test(message.content)) {
+    if (UNMUTE_PATTERN.test(message.content)) {
       settings.muted = false;
       await message.reply("Back online.");
       return;
     }
 
-    if (mentionsBot && RESTRICT_PATTERN.test(message.content)) {
+    if (RESTRICT_PATTERN.test(message.content)) {
       const target = message.mentions.users.find((user) => user.id !== client.user.id);
       if (!target) {
         await message.reply('Tag the person you want me to reply to, e.g. "only reply to @someone".');
@@ -164,7 +164,7 @@ function registerMessageHandler(client) {
       return;
     }
 
-    if (mentionsBot && UNRESTRICT_PATTERN.test(message.content)) {
+    if (UNRESTRICT_PATTERN.test(message.content)) {
       settings.restrictedTo = null;
       await message.reply('Replying to everyone again.');
       return;
@@ -172,6 +172,11 @@ function registerMessageHandler(client) {
 
     if (settings.muted) return;
     if (settings.restrictedTo && message.author.id !== settings.restrictedTo) return;
+
+    // Message tags a real person other than the bot - it's directed at them,
+    // not at the bot, so stay out of it.
+    const mentionsSomeoneElse = message.mentions.users.some((user) => user.id !== client.user.id);
+    if (mentionsSomeoneElse) return;
 
     await message.channel.sendTyping();
     const reply = await getChatReply(message.channelId, message.author.username, message.content);
