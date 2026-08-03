@@ -40,9 +40,11 @@ const WHATSAPP_APIKEY = process.env.WHATSAPP_APIKEY;
 const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
 
 // Groq (free tier, no card required) powers general chat in HOME_CHANNEL_ID.
-// Get a key at console.groq.com.
+// Get a key at console.groq.com. llama-3.1-8b-instant is Groq's cheapest/
+// fastest model with a much higher free daily token quota than the 70B
+// models - plenty for casual chat, and far less likely to hit the daily cap.
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
-const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.1-8b-instant';
 
 module.exports = {
   SOURCE_SERVER_GUILD_ID,

@@ -92,7 +92,13 @@ async function getChatReply(channelId) {
     });
 
     if (!response.ok) {
-      console.error(`Groq API error: ${response.status} ${await response.text()}`);
+      const errorBody = await response.text();
+      console.error(`Groq API error: ${response.status} ${errorBody}`);
+      // Told to the user instead of silently going quiet, since otherwise all
+      // they see is a "typing..." indicator that never resolves into a reply.
+      if (response.status === 429) {
+        return "I'm rate-limited by Groq's free tier right now - try again in a bit.";
+      }
       return null;
     }
 

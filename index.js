@@ -53,6 +53,8 @@
  */
 
 require('dotenv').config();
+const fs = require('fs');
+const path = require('path');
 const http = require('http');
 const {
   POLL_INTERVAL_MS,
@@ -63,6 +65,28 @@ const {
 const { loadState, saveState } = require('./src/state');
 const { initScraper, scrapeOnce } = require('./src/scraper');
 const { startBot, postOrUpdateWatchMessages, announceAvailable } = require('./src/bot');
+
+// Mirrors every console.log/console.error (from this file and every module
+// it requires) to a plain-text file, so log output is readable without
+// needing this terminal - useful once this runs somewhere headless (Render).
+const LOG_FILE_PATH = path.join(__dirname, 'bot.log');
+const originalConsoleLog = console.log.bind(console);
+const originalConsoleError = console.error.bind(console);
+
+function appendToLogFile(level, args) {
+  const line = args.map((arg) => (arg instanceof Error ? arg.stack : String(arg))).join(' ');
+  fs.appendFileSync(LOG_FILE_PATH, `[${new Date().toISOString()}] ${level} ${line}\n`);
+}
+
+console.log = (...args) => {
+  originalConsoleLog(...args);
+  appendToLogFile('INFO', args);
+};
+
+console.error = (...args) => {
+  originalConsoleError(...args);
+  appendToLogFile('ERROR', args);
+};
 
 // See discord_login.js's original header for why this exists: Render only
 // keeps a free "Web Service" alive if it answers HTTP requests on $PORT.
