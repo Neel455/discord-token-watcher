@@ -8,7 +8,7 @@ const {
 } = require('discord.js');
 const { DISCORD_BOT_TOKEN, HOME_CHANNEL_ID, SOURCES } = require('./config');
 const { saveState } = require('./state');
-const { getChatReply, clearHistory } = require('./chat');
+const { getChatReply, recordMessage, clearHistory } = require('./chat');
 
 const DISCORD_MESSAGE_LIMIT = 2000;
 
@@ -130,14 +130,22 @@ function registerMessageHandler(client) {
   client.on(Events.MessageCreate, async (message) => {
     if (message.author.bot) return;
 
-    const mentionsBot = message.mentions.has(client.user);
+    // Replying to one of the bot's own messages counts as addressing it, same
+    // as an @mention - discord.js resolves this from data Discord already
+    // sends inline, no extra fetch needed.
+    const addressesBot =
+      message.mentions.has(client.user) || message.mentions.repliedUser?.id === client.user.id;
 
-    if (mentionsBot && GOOD_BOY_PATTERN.test(message.content)) {
+    if (addressesBot && GOOD_BOY_PATTERN.test(message.content)) {
       await message.reply('woof woof');
       return;
     }
 
     if (message.channelId !== HOME_CHANNEL_ID) return;
+
+    // Recorded for every message, tagged or not, so the bot has context of
+    // the whole conversation even though it only speaks up when addressed.
+    recordMessage(message.channelId, message.author.username, message.content);
 
     const settings = getChatSettings(message.channelId);
 
@@ -170,16 +178,12 @@ function registerMessageHandler(client) {
       return;
     }
 
+    if (!addressesBot) return;
     if (settings.muted) return;
     if (settings.restrictedTo && message.author.id !== settings.restrictedTo) return;
 
-    // Message tags a real person other than the bot - it's directed at them,
-    // not at the bot, so stay out of it.
-    const mentionsSomeoneElse = message.mentions.users.some((user) => user.id !== client.user.id);
-    if (mentionsSomeoneElse) return;
-
     await message.channel.sendTyping();
-    const reply = await getChatReply(message.channelId, message.author.username, message.content);
+    const reply = await getChatReply(message.channelId);
     if (!reply) return;
 
     const chunks = chunkMessage(reply);

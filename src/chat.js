@@ -35,10 +35,6 @@ function stripFakeMentions(text) {
   return text.replace(/<@!?(\d+)>/g, '@$1');
 }
 
-// Backstop in case the prompt instruction above gets ignored - hard-caps how
-// much the model can generate per reply, independent of the persona text.
-const MAX_REPLY_TOKENS = 150;
-
 function loadSystemPrompt() {
   try {
     const persona = fs.readFileSync(PERSONA_PATH, 'utf8').trim();
@@ -55,10 +51,18 @@ function getHistory(channelId) {
   return histories.get(channelId);
 }
 
-function pushToHistory(channelId, userContent, assistantContent) {
+// Appends a user message to a channel's context without generating a reply -
+// called for every message in the channel, tagged or not, so the bot stays
+// aware of the conversation even when it only speaks up when tagged.
+function recordMessage(channelId, authorName, messageText) {
   const history = getHistory(channelId);
-  history.push({ role: 'user', content: userContent });
-  history.push({ role: 'assistant', content: assistantContent });
+  history.push({ role: 'user', content: `${authorName}: ${messageText}` });
+  while (history.length > HISTORY_LIMIT) history.shift();
+}
+
+function recordReply(channelId, replyText) {
+  const history = getHistory(channelId);
+  history.push({ role: 'assistant', content: replyText });
   while (history.length > HISTORY_LIMIT) history.shift();
 }
 
@@ -67,18 +71,15 @@ function clearHistory(channelId) {
 }
 
 // Returns the reply text, or null if chat isn't configured / the call failed.
-async function getChatReply(channelId, authorName, messageText) {
+// Assumes the triggering message was already recorded via recordMessage, so
+// it's already the last entry in history - nothing further to add here.
+async function getChatReply(channelId) {
   if (!GROQ_API_KEY) {
     console.error('Missing GROQ_API_KEY - cannot generate a chat reply.');
     return null;
   }
 
-  const userContent = `${authorName}: ${messageText}`;
-  const messages = [
-    { role: 'system', content: loadSystemPrompt() },
-    ...getHistory(channelId),
-    { role: 'user', content: userContent },
-  ];
+  const messages = [{ role: 'system', content: loadSystemPrompt() }, ...getHistory(channelId)];
 
   try {
     const response = await fetch(GROQ_API_URL, {
@@ -87,7 +88,7 @@ async function getChatReply(channelId, authorName, messageText) {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${GROQ_API_KEY}`,
       },
-      body: JSON.stringify({ model: GROQ_MODEL, messages, max_tokens: MAX_REPLY_TOKENS }),
+      body: JSON.stringify({ model: GROQ_MODEL, messages }),
     });
 
     if (!response.ok) {
@@ -100,7 +101,7 @@ async function getChatReply(channelId, authorName, messageText) {
     if (!rawReply) return null;
 
     const reply = stripFakeMentions(rawReply);
-    pushToHistory(channelId, userContent, reply);
+    recordReply(channelId, reply);
     return reply;
   } catch (err) {
     console.error('Failed to get chat reply from Groq:', err.message);
@@ -108,4 +109,4 @@ async function getChatReply(channelId, authorName, messageText) {
   }
 }
 
-module.exports = { getChatReply, clearHistory };
+module.exports = { getChatReply, recordMessage, clearHistory };
