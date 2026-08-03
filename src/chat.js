@@ -46,6 +46,10 @@ function pushToHistory(channelId, userContent, assistantContent) {
   while (history.length > HISTORY_LIMIT) history.shift();
 }
 
+function clearHistory(channelId) {
+  histories.delete(channelId);
+}
+
 // Returns the reply text, or null if chat isn't configured / the call failed.
 async function getChatReply(channelId, authorName, messageText) {
   if (!GROQ_API_KEY) {
@@ -87,4 +91,4 @@ async function getChatReply(channelId, authorName, messageText) {
   }
 }
 
-module.exports = { getChatReply };
+module.exports = { getChatReply, clearHistory };

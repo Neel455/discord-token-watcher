@@ -8,7 +8,7 @@ const {
 } = require('discord.js');
 const { DISCORD_BOT_TOKEN, HOME_CHANNEL_ID, SOURCES } = require('./config');
 const { saveState } = require('./state');
-const { getChatReply } = require('./chat');
+const { getChatReply, clearHistory } = require('./chat');
 
 const DISCORD_MESSAGE_LIMIT = 2000;
 
@@ -205,6 +205,15 @@ function registerInteractionHandler(client, state) {
       return;
     }
 
+    if (interaction.isChatInputCommand() && interaction.commandName === 'forget') {
+      clearHistory(interaction.channelId);
+      await interaction.reply({
+        content: "Forgot the chat history in this channel - starting fresh.",
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
     if (!interaction.isStringSelectMenu()) return;
     if (!interaction.customId.startsWith('watch:')) return;
 
@@ -246,16 +255,19 @@ function registerInteractionHandler(client, state) {
   });
 }
 
-// Guild-scoped (not global) so it's available immediately after startup
+// Guild-scoped (not global) so they're available immediately after startup
 // instead of waiting up to an hour for Discord's global command propagation.
-async function registerSlashCommand(client) {
+async function registerSlashCommands(client) {
   const channel = await client.channels.fetch(HOME_CHANNEL_ID);
+  const guildId = channel.guildId;
+
   await client.application.commands.create(
-    {
-      name: 'watch',
-      description: 'Show the game-token watch dropdowns privately, just for you',
-    },
-    channel.guildId
+    { name: 'watch', description: 'Show the game-token watch dropdowns privately, just for you' },
+    guildId
+  );
+  await client.application.commands.create(
+    { name: 'forget', description: "Clear this channel's chat history with the bot" },
+    guildId
   );
 }
 
@@ -281,7 +293,7 @@ async function startBot(state) {
   await new Promise((resolve) => client.once(Events.ClientReady, resolve));
   console.log(`Bot logged in as ${client.user.tag}`);
 
-  await registerSlashCommand(client);
+  await registerSlashCommands(client);
 
   return client;
 }
