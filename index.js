@@ -22,9 +22,16 @@
  *   DISCORD_BOT_TOKEN=...               # your own bot's token
  *   HOME_CHANNEL_ID=...                 # channel in your own server for the dropdowns/pings
  *   HEADLESS=true                       # required for any headless host (Render, etc.)
+ *   GROQ_API_KEY=...                    # free key from console.groq.com - powers general chat
  *
  * Fill in real channel IDs (and verify dropdownName) for each entry in
  * src/config.js's SOURCES array before running.
+ *
+ * The bot also chats: any message posted in HOME_CHANNEL_ID gets an AI reply
+ * (src/chat.js, via Groq's free API), with a short rolling per-channel
+ * history for context. Requires the "Message Content Intent" toggled on for
+ * this bot in the Discord Developer Portal (Bot tab) - without it,
+ * message.content arrives empty and the bot has nothing to reply to.
  *
  * Optional, for a couple of extra non-Discord alert channels on every
  * availability transition (regardless of who's watching what):

@@ -8,6 +8,26 @@ const {
 } = require('discord.js');
 const { DISCORD_BOT_TOKEN, HOME_CHANNEL_ID, SOURCES } = require('./config');
 const { saveState } = require('./state');
+const { getChatReply } = require('./chat');
+
+const DISCORD_MESSAGE_LIMIT = 2000;
+
+// Splits on the nearest preceding newline so replies don't get cut mid-word;
+// falls back to a hard cut only if a single line exceeds the limit.
+function chunkMessage(text, limit = DISCORD_MESSAGE_LIMIT) {
+  const chunks = [];
+  let remaining = text;
+
+  while (remaining.length > limit) {
+    let cut = remaining.lastIndexOf('\n', limit);
+    if (cut <= 0) cut = limit;
+    chunks.push(remaining.slice(0, cut));
+    remaining = remaining.slice(cut).trimStart();
+  }
+  chunks.push(remaining);
+
+  return chunks;
+}
 
 const MAX_OPTIONS_PER_MENU = 25;
 
@@ -32,6 +52,10 @@ function buildSelectMenu(source, state) {
     );
 
   return new ActionRowBuilder().addComponents(menu);
+}
+
+function buildAllRows(state) {
+  return SOURCES.map((source) => buildSelectMenu(source, state)).filter(Boolean);
 }
 
 // Posts (or edits, if it already exists) one message per source containing
@@ -78,8 +102,109 @@ async function announceAvailable(client, becameAvailable, state) {
   }
 }
 
+// "good boy"/"good bot" when the bot is @mentioned doesn't need the
+// privileged Message Content intent - Discord exempts messages that mention
+// the app from that requirement, so GuildMessages alone is enough.
+const GOOD_BOY_PATTERN = /\bgood\s*(boy|bot)\b/i;
+
+// Per-channel chat controls, in-memory only - resets on restart, same as the
+// chat history in src/chat.js. Requiring an @mention for these (unlike
+// general chat, which needs none) keeps normal conversation from accidentally
+// tripping a control phrase.
+const chatSettings = new Map();
+
+function getChatSettings(channelId) {
+  if (!chatSettings.has(channelId)) chatSettings.set(channelId, { muted: false, restrictedTo: null });
+  return chatSettings.get(channelId);
+}
+
+const MUTE_PATTERN = /\b(shut\s*up|be\s*quiet|stop\s*talking|stop\s*replying)\b/i;
+const UNMUTE_PATTERN = /\b(unmute|you\s*can\s*talk|start\s*talking|start\s*replying|talk\s*again)\b/i;
+const RESTRICT_PATTERN = /\bonly\s*(reply|talk|respond)\s*to\b/i;
+const UNRESTRICT_PATTERN = /\b(reply\s*to\s*everyone|talk\s*to\s*everyone|unfocus|stop\s*only\s*replying)\b/i;
+
+// One handler for all message-driven features, so a message that happens to
+// match more than one (e.g. mentions the bot AND says "good boy") only gets
+// one reply instead of double-replying.
+function registerMessageHandler(client) {
+  client.on(Events.MessageCreate, async (message) => {
+    if (message.author.bot) return;
+
+    const mentionsBot = message.mentions.has(client.user);
+
+    if (mentionsBot && GOOD_BOY_PATTERN.test(message.content)) {
+      await message.reply('woof woof');
+      return;
+    }
+
+    if (message.channelId !== HOME_CHANNEL_ID) return;
+
+    const settings = getChatSettings(message.channelId);
+
+    if (mentionsBot && MUTE_PATTERN.test(message.content)) {
+      settings.muted = true;
+      await message.reply('Going quiet in here - say the word when you want me back.');
+      return;
+    }
+
+    if (mentionsBot && UNMUTE_PATTERN.test(message.content)) {
+      settings.muted = false;
+      await message.reply("Back online.");
+      return;
+    }
+
+    if (mentionsBot && RESTRICT_PATTERN.test(message.content)) {
+      const target = message.mentions.users.find((user) => user.id !== client.user.id);
+      if (!target) {
+        await message.reply('Tag the person you want me to reply to, e.g. "only reply to @someone".');
+        return;
+      }
+      settings.restrictedTo = target.id;
+      await message.reply(`Got it - only replying to ${target} until told otherwise.`);
+      return;
+    }
+
+    if (mentionsBot && UNRESTRICT_PATTERN.test(message.content)) {
+      settings.restrictedTo = null;
+      await message.reply('Replying to everyone again.');
+      return;
+    }
+
+    if (settings.muted) return;
+    if (settings.restrictedTo && message.author.id !== settings.restrictedTo) return;
+
+    await message.channel.sendTyping();
+    const reply = await getChatReply(message.channelId, message.author.username, message.content);
+    if (!reply) return;
+
+    const chunks = chunkMessage(reply);
+    await message.reply(chunks[0]);
+    for (const chunk of chunks.slice(1)) {
+      await message.channel.send(chunk);
+    }
+  });
+}
+
 function registerInteractionHandler(client, state) {
   client.on(Events.InteractionCreate, async (interaction) => {
+    if (interaction.isChatInputCommand() && interaction.commandName === 'watch') {
+      const rows = buildAllRows(state);
+      if (rows.length === 0) {
+        await interaction.reply({
+          content: 'No games known yet - check back after the next scrape.',
+          flags: MessageFlags.Ephemeral,
+        });
+        return;
+      }
+
+      await interaction.reply({
+        content: 'Select the games you want available-alerts for (visible only to you).',
+        components: rows,
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
     if (!interaction.isStringSelectMenu()) return;
     if (!interaction.customId.startsWith('watch:')) return;
 
@@ -121,6 +246,19 @@ function registerInteractionHandler(client, state) {
   });
 }
 
+// Guild-scoped (not global) so it's available immediately after startup
+// instead of waiting up to an hour for Discord's global command propagation.
+async function registerSlashCommand(client) {
+  const channel = await client.channels.fetch(HOME_CHANNEL_ID);
+  await client.application.commands.create(
+    {
+      name: 'watch',
+      description: 'Show the game-token watch dropdowns privately, just for you',
+    },
+    channel.guildId
+  );
+}
+
 async function startBot(state) {
   if (!DISCORD_BOT_TOKEN) {
     throw new Error('Missing DISCORD_BOT_TOKEN.');
@@ -129,12 +267,21 @@ async function startBot(state) {
     throw new Error('Missing HOME_CHANNEL_ID.');
   }
 
-  const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+  // MessageContent is privileged - must also be toggled on for this bot in the
+  // Discord Developer Portal (Bot tab -> "Message Content Intent"), since the
+  // chat feature reads message.content on every message in HOME_CHANNEL_ID,
+  // not just ones that @mention the bot (which would be exempt on their own).
+  const client = new Client({
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent],
+  });
   registerInteractionHandler(client, state);
+  registerMessageHandler(client);
 
   await client.login(DISCORD_BOT_TOKEN);
   await new Promise((resolve) => client.once(Events.ClientReady, resolve));
   console.log(`Bot logged in as ${client.user.tag}`);
+
+  await registerSlashCommand(client);
 
   return client;
 }

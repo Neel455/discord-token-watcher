@@ -10,9 +10,9 @@ const SOURCE_SERVER_GUILD_ID = '1310909523715690536';
 // double check dropdownName against that channel's actual button text - it's
 // a guess based on the Ubisoft one this project started with.
 const SOURCES = [
-  { key: 'ubisoft', label: 'Ubisoft', channelId: 'TODO_UBISOFT_CHANNEL_ID', dropdownName: 'Select a Ubisoft game...' },
+  { key: 'ubisoft', label: 'Ubisoft', channelId: '1449749992708509706', dropdownName: 'Select a Ubisoft game...' },
   { key: 'steam', label: 'Steam', channelId: 'TODO_STEAM_CHANNEL_ID', dropdownName: 'Select a Steam game...' },
-  { key: 'ea', label: 'EA', channelId: 'TODO_EA_CHANNEL_ID', dropdownName: 'Select an EA game...' },
+  { key: 'ea', label: 'EA', channelId: '1478352818040737902', dropdownName: 'Select an EA game...' },
 ];
 
 // Your own server: the real bot lives here and posts the watch dropdowns +
@@ -39,6 +39,11 @@ const WHATSAPP_PHONE = process.env.WHATSAPP_PHONE;
 const WHATSAPP_APIKEY = process.env.WHATSAPP_APIKEY;
 const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
 
+// Groq (free tier, no card required) powers general chat in HOME_CHANNEL_ID.
+// Get a key at console.groq.com.
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
+const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+
 module.exports = {
   SOURCE_SERVER_GUILD_ID,
   SOURCES,
@@ -54,4 +59,6 @@ module.exports = {
   WHATSAPP_PHONE,
   WHATSAPP_APIKEY,
   DISCORD_WEBHOOK_URL,
+  GROQ_API_KEY,
+  GROQ_MODEL,
 };
