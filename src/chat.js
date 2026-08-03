@@ -21,9 +21,7 @@ const FORMAT_NOTE =
   '\n\nUser messages are prefixed with the speaker\'s Discord name, like ' +
   '"SomeUser: message text" - that\'s just so you can tell who\'s talking in ' +
   'a shared channel. Reply as plain text with no name prefix of your own, and ' +
-  "don't roleplay or speak as other users. Keep every reply to 1-3 short " +
-  'sentences, like an actual Discord chat message - never write paragraphs, ' +
-  'even if the personality above is chatty or enthusiastic. Never use Discord ' +
+  "don't roleplay or speak as other users. Never use Discord " +
   'mention syntax like <@123456789> - you are not given real user IDs, so any ' +
   "you write will be fake and show up broken. Refer to people by their plain " +
   'name instead (e.g. "Shahneel" or "@Shahneel" as plain text).';
