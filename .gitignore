@@ -2,3 +2,4 @@ node_modules/
 .env
 discord_auth_state.json
 token_availability_log.txt
+state.json

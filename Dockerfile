@@ -8,6 +8,7 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev
 
-COPY discord_login.js ./
+COPY index.js ./
+COPY src ./src
 
-CMD ["node", "discord_login.js"]
+CMD ["node", "index.js"]
